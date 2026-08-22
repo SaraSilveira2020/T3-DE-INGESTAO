@@ -13,7 +13,14 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import StringType, StructField, StructType
+from pyspark.sql.types import (
+    DoubleType,
+    LongType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
 
 try:
     import yaml
@@ -25,6 +32,33 @@ RAW_SCHEMA = StructType(
     [
         StructField("_source_id", StringType(), False),
         StructField("_raw_document", StringType(), True),
+    ]
+)
+
+WATERMARK_SCHEMA = StructType(
+    [
+        StructField("collection", StringType(), False),
+        StructField("watermark_field", StringType(), True),
+        StructField("watermark_value", StringType(), True),
+        StructField("updated_at", TimestampType(), False),
+        StructField("_ingestion_id", StringType(), False),
+    ]
+)
+
+LOG_SCHEMA = StructType(
+    [
+        StructField("_ingestion_id", StringType(), False),
+        StructField("collection", StringType(), False),
+        StructField("load_type", StringType(), False),
+        StructField("watermark_inicial", StringType(), True),
+        StructField("watermark_final", StringType(), True),
+        StructField("qtd_lida_origem", LongType(), False),
+        StructField("qtd_gravada_destino", LongType(), False),
+        StructField("start_time", TimestampType(), False),
+        StructField("end_time", TimestampType(), False),
+        StructField("duracao_seg", DoubleType(), False),
+        StructField("status", StringType(), False),
+        StructField("mensagem_erro", StringType(), True),
     ]
 )
 
@@ -166,14 +200,27 @@ class ControlRepository:
             return
 
         row = [(collection, watermark_field, watermark_value, dt.datetime.utcnow(), ingestion_id)]
-        df = self.spark.createDataFrame(
-            row,
-            ["collection", "watermark_field", "watermark_value", "updated_at", "_ingestion_id"],
-        )
+        df = self.spark.createDataFrame(row, WATERMARK_SCHEMA)
         df.write.format("delta").mode("append").saveAsTable(self.watermark_table)
 
     def write_log(self, log: dict[str, Any]) -> None:
-        df = self.spark.createDataFrame([log])
+        row = [
+            (
+                log["_ingestion_id"],
+                log["collection"],
+                log["load_type"],
+                log["watermark_inicial"],
+                log["watermark_final"],
+                int(log["qtd_lida_origem"]),
+                int(log["qtd_gravada_destino"]),
+                log["start_time"],
+                log["end_time"],
+                float(log["duracao_seg"]),
+                log["status"],
+                log["mensagem_erro"],
+            )
+        ]
+        df = self.spark.createDataFrame(row, LOG_SCHEMA)
         df.write.format("delta").mode("append").saveAsTable(self.log_table)
 
 
