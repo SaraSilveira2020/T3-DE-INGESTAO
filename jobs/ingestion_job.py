@@ -62,6 +62,19 @@ LOG_SCHEMA = StructType(
     ]
 )
 
+BRONZE_SCHEMA = StructType(
+    [
+        StructField("_source_id", StringType(), False),
+        StructField("_raw_document", StringType(), True),
+        StructField("_ingestion_id", StringType(), False),
+        StructField("_ingestion_timestamp", TimestampType(), False),
+        StructField("_source_path", StringType(), False),
+        StructField("_load_type", StringType(), False),
+        StructField("_ingestion_date", StringType(), False),
+        StructField("_rescued_data", StringType(), True),
+    ]
+)
+
 
 @dataclass(frozen=True)
 class CollectionConfig:
@@ -324,6 +337,18 @@ class BronzeLoader:
             .withColumn("_rescued_data", F.lit(None).cast("string"))
         )
 
+    def ensure_table(self, destination: str) -> None:
+        if self.spark.catalog.tableExists(destination):
+            return
+
+        empty_df = self.spark.createDataFrame([], BRONZE_SCHEMA)
+        (
+            empty_df.write.format("delta")
+            .mode("append")
+            .partitionBy(self.partition_column)
+            .saveAsTable(destination)
+        )
+
     def write(self, df: DataFrame, destination: str) -> int:
         rows_written = df.count()
         (
@@ -408,6 +433,7 @@ class IngestionJob:
         final_watermark = None
 
         try:
+            self.loader.ensure_table(config.destination)
             source_count = self.extractor.count(config, initial_watermark)
             final_watermark = self.extractor.max_watermark(config, query_filter)
 
