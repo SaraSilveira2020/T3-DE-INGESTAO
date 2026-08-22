@@ -10,7 +10,7 @@
       "projection": {
         "poster": 0
       },
-      "destination": "bronze.sample_mflix.movies"
+      "destination": "workspace.bronze.movies"
     },
     {
       "name": "comments",
@@ -19,7 +19,7 @@
       "watermark_type": "datetime",
       "source_id_field": "_id",
       "projection": {},
-      "destination": "bronze.sample_mflix.comments"
+      "destination": "workspace.bronze.comments"
     },
     {
       "name": "users",
@@ -30,7 +30,7 @@
       "projection": {
         "password": 0
       },
-      "destination": "bronze.sample_mflix.users"
+      "destination": "workspace.bronze.users"
     },
     {
       "name": "theaters",
@@ -39,7 +39,7 @@
       "watermark_type": null,
       "source_id_field": "_id",
       "projection": {},
-      "destination": "bronze.sample_mflix.theaters"
+      "destination": "workspace.bronze.theaters"
     },
     {
       "name": "sessions",
@@ -50,7 +50,7 @@
       "projection": {
         "jwt": 0
       },
-      "destination": "bronze.sample_mflix.sessions"
+      "destination": "workspace.bronze.sessions"
     },
     {
       "name": "embedded_movies",
@@ -61,7 +61,7 @@
       "projection": {
         "plot_embedding": 0
       },
-      "destination": "bronze.sample_mflix.embedded_movies"
+      "destination": "workspace.bronze.embedded_movies"
     }
   ]
 }

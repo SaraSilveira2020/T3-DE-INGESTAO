@@ -96,12 +96,20 @@ class SecretResolver:
 
 
 class ControlRepository:
-    def __init__(self, spark: SparkSession, control_config: dict[str, Any]):
+    def __init__(
+        self,
+        spark: SparkSession,
+        control_config: dict[str, Any],
+        bronze_config: dict[str, Any],
+    ):
         self.spark = spark
+        self.catalog = bronze_config["catalog"]
+        self.schema = bronze_config["schema"]
         self.log_table = control_config["table_name"]
         self.watermark_table = control_config["watermark_table_name"]
 
     def ensure_tables(self) -> None:
+        self.spark.sql(f"CREATE SCHEMA IF NOT EXISTS {self.catalog}.{self.schema}")
         self.spark.sql(
             f"""
             CREATE TABLE IF NOT EXISTS {self.log_table} (
@@ -312,7 +320,11 @@ class IngestionJob:
             scope=mongodb_config["connection_secret_scope"],
             key=mongodb_config["connection_secret_key"],
         )
-        self.control = ControlRepository(self.spark, self.pipeline_config["control"])
+        self.control = ControlRepository(
+            self.spark,
+            self.pipeline_config["control"],
+            self.pipeline_config["bronze"],
+        )
         self.extractor = MongoExtractor(
             uri=uri,
             database=self.collections_config["database"],

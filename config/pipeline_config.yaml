@@ -14,7 +14,7 @@ mongodb:
     backoff_seconds: 5
 
 bronze:
-  catalog: main
+  catalog: workspace
   schema: bronze
   base_path: bronze/sample_mflix
   file_format: delta
@@ -22,8 +22,8 @@ bronze:
   write_mode: append
 
 control:
-  table_name: bronze.control_ingestion_log
-  watermark_table_name: bronze.control_watermarks
+  table_name: workspace.bronze.control_ingestion_log
+  watermark_table_name: workspace.bronze.control_watermarks
 
 quality:
   max_count_divergence_percent: 0
