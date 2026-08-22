@@ -1,0 +1,40 @@
+pipeline:
+  name: sample_mflix_bronze_ingestion
+  source_system: mongodb_atlas
+  database: sample_mflix
+  timezone: UTC
+
+mongodb:
+  connection_secret_scope: conn-db
+  connection_secret_key: cnn-mongodb-sampleflix
+  connection_env_var: MONGODB_URI
+  default_batch_size: 1000
+  retry:
+    max_attempts: 3
+    backoff_seconds: 5
+
+bronze:
+  catalog: main
+  schema: bronze
+  base_path: bronze/sample_mflix
+  file_format: delta
+  partition_column: _ingestion_date
+  write_mode: append
+
+control:
+  table_name: bronze.control_ingestion_log
+  watermark_table_name: bronze.control_watermarks
+
+quality:
+  max_count_divergence_percent: 0
+  fail_on_null_source_id: true
+  fail_on_duplicate_source_id_in_batch: true
+
+resources:
+  default_num_partitions: 4
+  small_collection_num_partitions: 1
+  large_collection_num_partitions: 8
+
+schema:
+  strategy: raw_json_with_control_columns
+  rescue_column: _rescued_data

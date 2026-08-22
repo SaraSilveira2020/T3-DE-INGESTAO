@@ -1,0 +1,67 @@
+{
+  "database": "sample_mflix",
+  "collections": [
+    {
+      "name": "movies",
+      "load_type": "incremental",
+      "watermark_field": "lastupdated",
+      "watermark_type": "string",
+      "source_id_field": "_id",
+      "projection": {
+        "poster": 0
+      },
+      "destination": "bronze.sample_mflix.movies"
+    },
+    {
+      "name": "comments",
+      "load_type": "incremental",
+      "watermark_field": "date",
+      "watermark_type": "datetime",
+      "source_id_field": "_id",
+      "projection": {},
+      "destination": "bronze.sample_mflix.comments"
+    },
+    {
+      "name": "users",
+      "load_type": "full",
+      "watermark_field": null,
+      "watermark_type": null,
+      "source_id_field": "_id",
+      "projection": {
+        "password": 0
+      },
+      "destination": "bronze.sample_mflix.users"
+    },
+    {
+      "name": "theaters",
+      "load_type": "full",
+      "watermark_field": null,
+      "watermark_type": null,
+      "source_id_field": "_id",
+      "projection": {},
+      "destination": "bronze.sample_mflix.theaters"
+    },
+    {
+      "name": "sessions",
+      "load_type": "full",
+      "watermark_field": null,
+      "watermark_type": null,
+      "source_id_field": "_id",
+      "projection": {
+        "jwt": 0
+      },
+      "destination": "bronze.sample_mflix.sessions"
+    },
+    {
+      "name": "embedded_movies",
+      "load_type": "full",
+      "watermark_field": null,
+      "watermark_type": null,
+      "source_id_field": "_id",
+      "projection": {
+        "plot_embedding": 0
+      },
+      "destination": "bronze.sample_mflix.embedded_movies"
+    }
+  ]
+}
