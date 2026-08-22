@@ -1,0 +1,8 @@
+_ingestion_id,collection,load_type,watermark_inicial,watermark_final,qtd_lida_origem,qtd_gravada_destino,start_time,end_time,duracao_seg,status,mensagem_erro
+b1efac5c-e665-4b1c-9a1f-2d104c97586c,comments,incremental,2018-08-14T15:05:03.142000,2026-08-22T13:09:19.649000,2,2,2026-08-22T13:09:32.531Z,2026-08-22T13:09:37.170Z,4.639,SUCCESS,null
+e2d55395-68e0-4b0e-9ba7-79dd60b77729,comments,incremental,null,null,0,0,2026-08-22T13:01:57.279Z,2026-08-22T13:01:58.024Z,0.745,FAILED,Cannot use MongoClient after close
+b908f328-6377-4249-b782-376078eeb094,comments,incremental,null,null,0,0,2026-08-22T13:02:16.058Z,2026-08-22T13:02:16.827Z,0.769,FAILED,Cannot use MongoClient after close
+9d44d41b-3bc0-416d-ad81-2b17804ba79c,comments,incremental,null,2018-08-14T15:05:03.142000,50304,50304,2026-08-22T13:02:54.860Z,2026-08-22T13:05:46.812Z,171.951,SUCCESS,null
+7500348a-c1c4-488a-8fd2-22d1a37b21ad,comments,incremental,2018-08-14T15:05:03.142000,null,0,0,2026-08-22T13:08:04.403Z,2026-08-22T13:08:05.456Z,1.053,SUCCESS,null
+3f26c90d-9bb1-4b52-950b-9179c67aae72,comments,incremental,2018-08-14T15:05:03.142000,null,0,0,2026-08-22T13:06:58.452Z,2026-08-22T13:06:59.699Z,1.247,SUCCESS,null
+ee09a6eb-0492-4813-b873-3f3bcd67f47c,users,full,null,null,185,185,2026-08-22T13:00:58.775Z,2026-08-22T13:01:03.375Z,4.6,SUCCESS,null
