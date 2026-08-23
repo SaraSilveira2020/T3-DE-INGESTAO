@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import bson
+from delta.tables import DeltaTable  # [Raquel - R3 idempotência] necessário para o MERGE (upsert) usado no BronzeLoader.write
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pyspark.sql import DataFrame, SparkSession
@@ -62,6 +63,11 @@ LOG_SCHEMA = StructType(
     ]
 )
 
+# [Raquel - R3 idempotência] Adicionado o campo _source_hash ao schema do Bronze.
+# Ele guarda um hash (sha2) do _raw_document e, junto com _source_id, forma a chave
+# usada no MERGE (ver BronzeLoader.write). Isso permite distinguir:
+#   - mesmo _id + mesmo hash  -> é o MESMO documento já ingerido (reprocessamento/retry) -> não duplica
+#   - mesmo _id + hash diferente -> o documento mudou de fato -> insere uma nova versão (mantém histórico)
 BRONZE_SCHEMA = StructType(
     [
         StructField("_source_id", StringType(), False),
@@ -72,6 +78,7 @@ BRONZE_SCHEMA = StructType(
         StructField("_load_type", StringType(), False),
         StructField("_ingestion_date", StringType(), False),
         StructField("_rescued_data", StringType(), True),
+        StructField("_source_hash", StringType(), False),
     ]
 )
 
@@ -188,6 +195,11 @@ class ControlRepository:
             USING DELTA
             """
         )
+        # [Raquel - R3 idempotência] Nota: log_table e watermark_table continuam append-only
+        # de propósito. Cada execução (inclusive um retry) grava uma linha nova de auditoria
+        # com seu próprio _ingestion_id, e isso é o comportamento esperado — não é a
+        # "duplicação de registros" que o R3 proíbe. O requisito de idempotência vale para os
+        # DADOS de negócio na camada Bronze, tratados em BronzeLoader.write.
 
     def get_watermark(self, collection: str) -> str | None:
         if not self.spark.catalog.tableExists(self.watermark_table):
@@ -262,6 +274,10 @@ class MongoExtractor:
         return watermark
 
     def build_filter(self, config: CollectionConfig, watermark: str | None) -> dict[str, Any]:
+        # [Raquel - R3 modos de carga] Sem alteração de lógica aqui: full load (users, theaters)
+        # continua sem watermark_field, então o filtro fica sempre {} e a coleção inteira é lida
+        # a cada execução, como pede o requisito de full load. A idempotência desse caso não é
+        # resolvida filtrando a leitura, e sim na escrita (ver BronzeLoader.write).
         if config.load_type != "incremental" or not config.watermark_field or watermark is None:
             return {}
         return {config.watermark_field: {"$gt": self.parse_watermark(config, watermark)}}
@@ -335,28 +351,83 @@ class BronzeLoader:
             .withColumn("_load_type", F.lit(load_type))
             .withColumn("_ingestion_date", F.lit(ingestion_date))
             .withColumn("_rescued_data", F.lit(None).cast("string"))
+            # [Raquel - R3 idempotência] Hash do conteúdo cru do documento. Combinado com
+            # _source_id, é a chave usada no MERGE de BronzeLoader.write para não duplicar
+            # registros quando o pipeline roda duas vezes seguidas (retry, backfill manual,
+            # ou full load relendo a coleção inteira a cada execução).
+            .withColumn("_source_hash", F.sha2(F.col("_raw_document"), 256))
         )
 
     def ensure_table(self, destination: str) -> None:
-        if self.spark.catalog.tableExists(destination):
+        if not self.spark.catalog.tableExists(destination):
+            empty_df = self.spark.createDataFrame([], BRONZE_SCHEMA)
+            (
+                empty_df.write.format("delta")
+                .mode("append")
+                .partitionBy(self.partition_column)
+                .saveAsTable(destination)
+            )
             return
 
-        empty_df = self.spark.createDataFrame([], BRONZE_SCHEMA)
-        (
-            empty_df.write.format("delta")
-            .mode("append")
-            .partitionBy(self.partition_column)
-            .saveAsTable(destination)
-        )
+        # [Raquel - R3 idempotência] Migração de schema para tabelas Bronze criadas ANTES da
+        # coluna _source_hash existir (é exatamente o erro "Cannot resolve t._source_hash..."
+        # que aparece no MERGE quando a tabela de destino já existia com o schema antigo).
+        # Sem isso, ensure_table só verificava se a tabela existia e retornava, nunca
+        # atualizando o schema de tabelas antigas.
+        existing_columns = {field.name for field in self.spark.table(destination).schema.fields}
+        if "_source_hash" not in existing_columns:
+            self.spark.sql(f"ALTER TABLE {destination} ADD COLUMNS (_source_hash STRING)")
+            # Backfill: calcula o hash das linhas já gravadas a partir do _raw_document.
+            # Isso é importante para a idempotência continuar valendo depois da migração:
+            # como o hash é determinístico (sha2 do mesmo _raw_document), um documento que
+            # não mudou desde a última carga vai gerar o MESMO hash na próxima execução e o
+            # MERGE vai reconhecer como já existente (sem duplicar). Se pulássemos o backfill,
+            # as linhas antigas ficariam com _source_hash NULL, NULL nunca "bate" na condição
+            # do MERGE (t._source_hash = s._source_hash), e todo o histórico antigo seria
+            # reinserido como se fosse novo na próxima carga.
+            self.spark.sql(
+                f"""
+                UPDATE {destination}
+                SET _source_hash = sha2(_raw_document, 256)
+                WHERE _source_hash IS NULL
+                """
+            )
 
     def write(self, df: DataFrame, destination: str) -> int:
+        # [Raquel - R3 idempotência] PRINCIPAL MUDANÇA DO REQUISITO.
+        # Antes: df.write.format("delta").mode("append").saveAsTable(destination)
+        # Isso duplicava registros em duas situações:
+        #   1) Full load (users, theaters): cada execução relê a coleção inteira e o append
+        #      simplesmente somava tudo de novo -> duplicação garantida a cada rerun.
+        #   2) Incremental (comments/movies): se o job falhasse depois de gravar alguns
+        #      batches mas antes de persistir o novo watermark (em ControlRepository.write_watermark),
+        #      o retry usaria o watermark antigo e reanexaria os mesmos documentos.
+        #
+        # Agora: MERGE (upsert) por (_source_id, _source_hash) no Delta.
+        #   - Se já existe uma linha com o mesmo _source_id e o mesmo _source_hash, é o MESMO
+        #     documento já ingerido -> whenNotMatchedInsertAll() não insere nada -> sem duplicata.
+        #   - Se o _source_id existe mas o hash mudou, é uma versão nova do documento -> insere
+        #     uma linha nova, preservando o histórico bruto (características de camada Bronze).
+        # Isso cobre, com a mesma lógica, tanto o full load quanto o incremental, e torna o
+        # pipeline seguro para rodar duas vezes seguidas (retry) sem corromper o Bronze.
         rows_written = df.count()
+
+        target = DeltaTable.forName(self.spark, destination)
         (
-            df.write.format("delta")
-            .mode("append")
-            .partitionBy(self.partition_column)
-            .saveAsTable(destination)
+            target.alias("t")
+            .merge(
+                df.alias("s"),
+                "t._source_id = s._source_id AND t._source_hash = s._source_hash",
+            )
+            .whenNotMatchedInsertAll()
+            .execute()
         )
+
+        # [Raquel - R3 idempotência] Nota: rows_written aqui é a quantidade de linhas do batch
+        # de origem (igual ao comportamento anterior), não necessariamente o nº de linhas
+        # efetivamente inseridas no destino (o MERGE pode ignorar duplicatas exatas). Para um
+        # número exato de linhas inseridas, dá para consultar operationMetrics via
+        # `DESCRIBE HISTORY {destination}` após o merge, se isso for exigido no log de controle.
         return rows_written
 
 
@@ -449,6 +520,13 @@ class IngestionJob:
                     f"Read {rows_read} records but source count was {source_count}."
                 )
 
+            # [Raquel - R3 idempotência] Sem mudança na ordem/condição de gravação do watermark:
+            # ele continua sendo persistido só quando status == "SUCCESS", ou seja, só depois que
+            # TODOS os batches já foram escritos no Bronze. Isso continua importante, mas agora
+            # deixou de ser o único mecanismo de proteção: mesmo que o job caia antes desta linha
+            # e um retry releia o mesmo intervalo (watermark antigo), o MERGE em BronzeLoader.write
+            # garante que os documentos já gravados não sejam duplicados — o retry vira um no-op
+            # para o que já estava lá, e só grava o que realmente faltava.
             if status == "SUCCESS":
                 self.control.write_watermark(
                     config.name,
@@ -480,8 +558,30 @@ class IngestionJob:
             )
 
 
+# [Raquel - ajuste de ambiente Databricks] Não é um item do R3, mas sem isso o pipeline nem
+# chega a rodar no Databricks: __file__ só existe quando o .py roda como script "de verdade"
+# (ex.: task tipo "Python script" de um Job). Quando o arquivo é executado interativamente
+# pelo botão Run do notebook, __file__ não é definido -> NameError. _find_project_root sobe
+# a partir do diretório de trabalho atual até achar a pasta "config" (irmã de jobs/), em vez
+# de assumir um número fixo de níveis, o que funciona tanto rodando local quanto no notebook.
+def _find_project_root(start: Path, marker: str = "config", max_levels: int = 5) -> Path:
+    current = start.resolve()
+    for _ in range(max_levels):
+        if (current / marker).is_dir():
+            return current
+        if current.parent == current:
+            break
+        current = current.parent
+    return start.resolve()
+
+
 def default_path(relative_path: str) -> str:
-    project_root = Path(__file__).resolve().parents[1]
+    try:
+        project_root = Path(__file__).resolve().parents[1]
+    except NameError:
+        # [Raquel - ajuste de ambiente Databricks] Fallback para execução interativa no
+        # notebook, onde __file__ não existe.
+        project_root = _find_project_root(Path.cwd())
     return str(project_root / relative_path)
 
 
@@ -502,7 +602,15 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional collection name. If omitted, all configured collections are processed.",
     )
-    return parser.parse_args()
+    # [Raquel - ajuste de ambiente Databricks] Também não é item do R3, mas sem isso o
+    # notebook não executa: rodando interativamente, sys.argv traz os argumentos do próprio
+    # kernel Jupyter/IPython (ex.: "-f .../connection.json"), não os argumentos do nosso
+    # script. parser.parse_args() rejeita esse argumento desconhecido e derruba o processo
+    # com SystemExit ("unrecognized arguments: -f ..."). parse_known_args() ignora o que não
+    # reconhece e continua funcionando normalmente quando o script roda por linha de
+    # comando/Job com argumentos de verdade (--collection, --pipeline-config etc.).
+    args, _unknown = parser.parse_known_args()
+    return args
 
 
 if __name__ == "__main__":
