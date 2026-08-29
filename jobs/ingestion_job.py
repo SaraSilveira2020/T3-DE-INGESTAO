@@ -251,6 +251,30 @@ class ControlRepository:
         df = self.spark.createDataFrame(row, LOG_SCHEMA)
         df.write.format("delta").mode("append").saveAsTable(self.log_table)
 
+    def export_execution_evidence(self, collection: str, execution_case: str) -> None:
+        evidence_dir = Path("/Workspace") / "Users" if Path("/Workspace").exists() else Path(".")
+        try:
+            project_root = Path(__file__).resolve().parents[1]
+        except NameError:
+            project_root = _find_project_root(Path.cwd())
+
+        export_dir = project_root / "docs" / "evidencias"
+        export_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        output_path = export_dir / f"{collection}_{execution_case}_{timestamp}.csv"
+
+        self.spark.table(self.log_table) \
+            .where(F.col("collection") == collection) \
+            .where(F.col("execution_case") == execution_case) \
+            .orderBy(F.col("start_time").desc()) \
+            .write \
+            .mode("overwrite") \
+            .option("header", "true") \
+            .csv(str(output_path))
+
+        return None
+
 
 class MongoExtractor:
     def __init__(self, uri: str, database: str, batch_size: int, retry_config: dict[str, Any]):
@@ -571,6 +595,7 @@ class IngestionJob:
                     "mensagem_erro": error_message,
                 }
             )
+            self.control.export_execution_evidence(config.name, execution_case)
 
 
 # [Raquel - ajuste de ambiente Databricks] Não é um item do R3, mas sem isso o pipeline nem
