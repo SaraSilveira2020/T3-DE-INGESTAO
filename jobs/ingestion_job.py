@@ -51,6 +51,7 @@ LOG_SCHEMA = StructType(
         StructField("_ingestion_id", StringType(), False),
         StructField("collection", StringType(), False),
         StructField("load_type", StringType(), False),
+        StructField("execution_case", StringType(), False),
         StructField("watermark_inicial", StringType(), True),
         StructField("watermark_final", StringType(), True),
         StructField("qtd_lida_origem", LongType(), False),
@@ -170,6 +171,7 @@ class ControlRepository:
                 _ingestion_id STRING,
                 collection STRING,
                 load_type STRING,
+                execution_case STRING,
                 watermark_inicial STRING,
                 watermark_final STRING,
                 qtd_lida_origem BIGINT,
@@ -234,6 +236,7 @@ class ControlRepository:
                 log["_ingestion_id"],
                 log["collection"],
                 log["load_type"],
+                log["execution_case"],
                 log["watermark_inicial"],
                 log["watermark_final"],
                 int(log["qtd_lida_origem"]),
@@ -477,6 +480,13 @@ class IngestionJob:
         self.loader = BronzeLoader(self.spark, self.pipeline_config)
         self.validator = QualityValidator(self.pipeline_config["quality"])
 
+    def resolve_execution_case(self, config: CollectionConfig, rows_read: int, source_count: int) -> str:
+        if config.load_type == "full":
+            return "INITIAL_FULL" if source_count == 0 else "FULL_REPROCESS"
+        if rows_read == 0:
+            return "INCREMENTAL_NO_NEW_DATA"
+        return "INCREMENTAL_WITH_NEW_DATA"
+
     def run(self, selected_collection: str | None = None) -> None:
         self.control.ensure_tables()
         collections = [
@@ -502,17 +512,21 @@ class IngestionJob:
         status = "SUCCESS"
         error_message = None
         final_watermark = None
+        execution_case = "UNKNOWN"
 
         try:
             self.loader.ensure_table(config.destination)
             source_count = self.extractor.count(config, initial_watermark)
             final_watermark = self.extractor.max_watermark(config, query_filter)
+            execution_case = self.resolve_execution_case(config, rows_read, source_count)
 
             for batch in self.extractor.iter_batches(config, initial_watermark):
                 rows_read += len(batch)
                 df = self.loader.build_bronze_df(batch, ingestion_id, config.load_type)
                 self.validator.validate_batch(df)
                 rows_written += self.loader.write(df, config.destination)
+
+            execution_case = self.resolve_execution_case(config, rows_read, source_count)
 
             if rows_read != source_count:
                 status = "PARTIAL"
@@ -545,6 +559,7 @@ class IngestionJob:
                     "_ingestion_id": ingestion_id,
                     "collection": config.name,
                     "load_type": config.load_type,
+                    "execution_case": execution_case,
                     "watermark_inicial": initial_watermark,
                     "watermark_final": final_watermark,
                     "qtd_lida_origem": rows_read,

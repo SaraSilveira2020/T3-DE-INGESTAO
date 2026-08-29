@@ -61,7 +61,8 @@ A camada Bronze preserva o dado como veio da origem, com colunas técnicas de ra
 ### 5. Controle e observabilidade
 - `workspace.bronze.control_ingestion_log`
   - armazena uma linha por execução
-  - registra status, contagem lida, contagem gravada, watermark inicial/final e duração
+  - registra status, contagem lida, contagem gravada, watermark inicial/final, duração e o cenário da execução
+  - inclui o campo `execution_case`, que identifica se a carga foi `INITIAL_FULL`, `FULL_REPROCESS`, `INCREMENTAL_NO_NEW_DATA` ou `INCREMENTAL_WITH_NEW_DATA`
 - `workspace.bronze.control_watermarks`
   - persiste o último valor processado por coleção em cargas incrementais
 
@@ -72,6 +73,17 @@ Coleções menores e estáveis são processadas em modo full, reprocessando a co
 
 ### Incremental load
 Coleções com campo temporal como `date` ou `lastupdated` usam watermark persistido para somente capturar registros novos ou alterados.
+
+### Cenários de execução registrados no log
+
+A tabela de controle registra explicitamente o cenário da execução por meio do campo `execution_case`:
+
+- `INITIAL_FULL`: primeira execução full da coleção
+- `FULL_REPROCESS`: reprocessamento full da coleção
+- `INCREMENTAL_NO_NEW_DATA`: carga incremental sem novos registros após o watermark
+- `INCREMENTAL_WITH_NEW_DATA`: carga incremental com registros novos efetivamente processados
+
+Esse mapeamento permite separar visualmente e auditoriar cada cenário sem criar múltiplas tabelas de log.
 
 ## Rastreabilidade
 
