@@ -1,0 +1,4 @@
+_ingestion_id,collection,load_type,watermark_inicial,watermark_final,qtd_lida_origem,qtd_gravada_destino,start_time,end_time,duracao_seg,status,mensagem_erro,execution_case
+0a16debd-daf3-448d-997a-b0219e2a0f4a,movies,incremental,2015-09-17 17:31:50.663000000,,0,0,2026-08-29 13:37:40.332556,2026-08-29 13:37:41.413994,1.081,SUCCESS,,INCREMENTAL_NO_NEW_DATA
+0be11f68-5299-4bf6-a7d0-00d07bebdee9,movies,incremental,2015-09-17 17:31:50.663000000,,0,0,2026-08-29 13:34:59.750652,2026-08-29 13:35:01.544530,1.794,SUCCESS,,INCREMENTAL_NO_NEW_DATA
+ef41ade5-ead8-4a91-9e41-709d0beb8a5f,movies,incremental,2015-09-17 17:31:50.663000000,,0,0,2026-08-29 13:28:19.459545,2026-08-29 13:28:20.888432,1.429,SUCCESS,,INCREMENTAL_NO_NEW_DATA

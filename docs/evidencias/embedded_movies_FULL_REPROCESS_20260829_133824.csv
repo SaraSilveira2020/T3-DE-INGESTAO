@@ -1,0 +1,3 @@
+_ingestion_id,collection,load_type,watermark_inicial,watermark_final,qtd_lida_origem,qtd_gravada_destino,start_time,end_time,duracao_seg,status,mensagem_erro,execution_case
+8146f8d0-1c5b-4a27-959e-e3552ae6dc73,embedded_movies,full,,,1500,1500,2026-08-29 13:38:13.904721,2026-08-29 13:38:22.905877,9.001,SUCCESS,,FULL_REPROCESS
+ee0014d0-7ef2-432e-a071-a5e3ec8ff632,embedded_movies,full,,,1500,1500,2026-08-29 13:29:02.510841,2026-08-29 13:29:12.874361,10.364,SUCCESS,,FULL_REPROCESS

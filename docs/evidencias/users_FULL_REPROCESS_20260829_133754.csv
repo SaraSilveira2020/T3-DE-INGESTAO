@@ -1,0 +1,3 @@
+_ingestion_id,collection,load_type,watermark_inicial,watermark_final,qtd_lida_origem,qtd_gravada_destino,start_time,end_time,duracao_seg,status,mensagem_erro,execution_case
+da865656-2463-4fc1-bcc6-f999b0c6ca48,users,full,,,185,185,2026-08-29 13:37:47.694222,2026-08-29 13:37:52.999222,5.305,SUCCESS,,FULL_REPROCESS
+79685d54-5071-4f96-822c-43b9376c5f8f,users,full,,,185,185,2026-08-29 13:28:32.457618,2026-08-29 13:28:39.992300,7.535,SUCCESS,,FULL_REPROCESS

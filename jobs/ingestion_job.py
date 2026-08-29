@@ -249,10 +249,9 @@ class ControlRepository:
             )
         ]
         df = self.spark.createDataFrame(row, LOG_SCHEMA)
-        df.write.format("delta").mode("append").saveAsTable(self.log_table)
+        df.write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable(self.log_table)
 
     def export_execution_evidence(self, collection: str, execution_case: str) -> None:
-        evidence_dir = Path("/Workspace") / "Users" if Path("/Workspace").exists() else Path(".")
         try:
             project_root = Path(__file__).resolve().parents[1]
         except NameError:
@@ -264,14 +263,22 @@ class ControlRepository:
         timestamp = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         output_path = export_dir / f"{collection}_{execution_case}_{timestamp}.csv"
 
-        self.spark.table(self.log_table) \
+        # Collect to driver to write locally (workspace filesystem doesn't support Spark distributed writes)
+        df = self.spark.table(self.log_table) \
             .where(F.col("collection") == collection) \
             .where(F.col("execution_case") == execution_case) \
-            .orderBy(F.col("start_time").desc()) \
-            .write \
-            .mode("overwrite") \
-            .option("header", "true") \
-            .csv(str(output_path))
+            .orderBy(F.col("start_time").desc())
+        
+        rows = df.collect()
+        
+        # Write CSV manually using Python's csv module
+        import csv
+        with open(str(output_path), 'w', newline='', encoding='utf-8') as f:
+            if rows:
+                writer = csv.DictWriter(f, fieldnames=rows[0].asDict().keys())
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(row.asDict())
 
         return None
 
